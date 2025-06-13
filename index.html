@@ -1,135 +1,253 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>To-Do List</title>
     <style>
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid black; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .delete-btn, .edit-btn { cursor: pointer; }
+        /* Общие стили для страницы */
+        body {
+            font-family: Arial, sans-serif;
+            background-image: url('https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80'); /* Красивое фоновое изображение */
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        /* Контейнер для содержимого */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: rgba(255, 255, 255, 0.85); /* Полупрозрачный белый фон */
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Стили для заголовка */
+        h1 {
+            text-align: center;
+            color: #4CAF50;
+        }
+
+        /* Стили для таблицы */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        /* Стили для кнопок */
+        button {
+            padding: 6px 12px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .edit-btn {
+            background-color: #2196F3;
+            color: white;
+        }
+
+        .delete-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        /* Стили для формы */
+        form {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        input[type="text"] {
+            width: 70%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+
+        button[type="submit"] {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button[type="submit"]:hover {
+            background-color: #45a049;
+        }
+
+        /* Адаптивность */
+        @media (max-width: 600px) {
+            table, form {
+                width: 100%;
+            }
+
+            input[type="text"] {
+                width: 60%;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1>To-Do List</h1>
-    <table>
-        <tr>
-            <th>Number</th>
-            <th>Text</th>
-            <th>Action</th>
-        </tr>
-        {{rows}}
-    </table>
-    <input type="text" id="todoInput" placeholder="Add new todo">
-    <button onclick="addTodo()">Add</button>
-
+    <div class="container">
+     
+        <h1>To-Do List</h1>
+        <button id="logoutButton">Log Out</button>
+        <table id="todo-table">
+            <tr>
+                <th>Number</th>
+                <th>Text</th>
+                <th>Action</th>
+            </tr>
+            {{rows}}
+        </table>
+        <form id="add-form">
+            <input type="text" id="todo-input" placeholder="Add new task">
+            <button type="submit">Add</button>
+        </form>
+        
+    </div>
     <script>
-        async function addTodo() {
-            const input = document.getElementById('todoInput');
-            const text = input.value.trim();
-            if (!text) return;
-
-            try {
-                const response = await fetch('/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text })
-                });
-                const data = await response.json();
-                if (data.id) {
-                    location.reload(); // Refresh to show new item
-                }
-            } catch (err) {
-                console.error('Error adding todo:', err);
+        // Здесь должен быть твой JavaScript-код для работы с таблицей
+        document.getElementById('add-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = document.getElementById('todo-input').value;
+            const response = await fetch('/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            if (response.ok) {
+                location.reload();
             }
-            input.value = '';
-        }
+        });
 
-        async function deleteTodo(id) {
-            try {
+        document.querySelectorAll('.edit-btn').forEach(button => {
+            button.addEventListener('click', async () => {
+                const id = button.getAttribute('data-id');
+                const newText = prompt('Enter new text:');
+                if (newText) {
+                    const response = await fetch('/edit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, text: newText })
+                    });
+                    if (response.ok) {
+                        location.reload();
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll('.delete-btn').forEach(button => {
+            button.addEventListener('click', async () => {
+                const id = button.getAttribute('data-id');
                 const response = await fetch('/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id })
                 });
-                const data = await response.json();
-                if (data.success) {
-                    location.reload(); // Refresh to update list
+                if (response.ok) {
+                    location.reload();
                 }
-            } catch (err) {
-                console.error('Error deleting todo:', err);
-            }
-        }
-
-        async function editTodo(id) {
-            const newText = prompt('Enter new text:');
-            if (!newText) return;
-
+            });
+        });
+        document.addEventListener('DOMContentLoaded', () => {
+        const loginForm = document.getElementById('loginForm');
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
             try {
-                const response = await fetch('/edit', {
+                const response = await fetch('/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, text: newText })
+                    body: JSON.stringify({ login, password })
                 });
                 const data = await response.json();
                 if (data.success) {
-                    location.reload(); // Refresh to update list
+                    window.location = '/';
+                } else {
+                    alert(data.error);
                 }
-            } catch (err) {
-                console.error('Error editing todo:', err);
-            }
-        }
-
-        // Add event listeners for delete and edit buttons
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('delete-btn')) {
-                const id = e.target.getAttribute('data-id');
-                deleteTodo(id);
-            } else if (e.target.classList.contains('edit-btn')) {
-                const id = e.target.getAttribute('data-id');
-                editTodo(id);
+            } catch (error) {
+                alert('Ошибка при входе');
             }
         });
+    });
+      // Show the admin button only if the user is an admin
+        const userRole = '{{userRole}}';
+        if (userRole === 'admin') {
+            const adminButton = document.createElement('button');
+            adminButton.textContent = 'Go to Admin Panel';
+            adminButton.onclick = () => {
+                window.location.href = '/admin.html';
+            };
+            document.querySelector('.container').insertBefore(adminButton, document.querySelector('h1').nextSibling);
+        }
+    document.addEventListener('DOMContentLoaded', function() {
+        // Проверка наличия loginForm (если он нужен на этой странице)
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                // Логика обработки формы, если требуется
+            });
+        } else {
+            console.error('Элемент с ID "loginForm" не найден');
+        }
+
+        // Функция выхода
+        const logoutButton = document.getElementById('logoutButton');
+        if (logoutButton) {
+            logoutButton.addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/logout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                    if (response.ok) {
+                        window.location.href = '/login';
+                    } else {
+                        alert('Ошибка при выходе из аккаунта');
+                    }
+                } catch (err) {
+                    alert('Ошибка: ' + err.message);
+                }
+            });
+        } else {
+            console.error('Элемент с ID "logoutButton" не найден');
+        }
+    });
     </script>
 </body>
 </html>
